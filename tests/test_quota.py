@@ -3,7 +3,7 @@ import time
 from collections.abc import AsyncIterator
 
 import pytest
-from fakeredis import FakeAsyncValkey
+from valkey.asyncio import Valkey
 
 from llm_gateway.quota import Lease, QuotaStore
 from tests.helpers import eventually
@@ -12,7 +12,7 @@ LEASE_TTL = 0.3
 
 
 @pytest.fixture
-async def store(valkey: FakeAsyncValkey) -> AsyncIterator[QuotaStore]:
+async def store(valkey: Valkey) -> AsyncIterator[QuotaStore]:
     quotas = QuotaStore(valkey, lease_ttl=LEASE_TTL)
     yield quotas
     await quotas.aclose()
@@ -76,7 +76,7 @@ async def test_heartbeat_keeps_running_request_leased(store: QuotaStore) -> None
     lease.release()
 
 
-async def test_leases_of_crashed_replica_expire(valkey: FakeAsyncValkey) -> None:
+async def test_leases_of_crashed_replica_expire(valkey: Valkey) -> None:
     crashed = QuotaStore(valkey, lease_ttl=LEASE_TTL)
     await acquire(crashed, 1)
     await crashed.aclose()  # heartbeats stop without releasing the lease

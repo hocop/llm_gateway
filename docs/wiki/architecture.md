@@ -64,8 +64,9 @@ Waiting is polling: requests waiting for the same quota are served in no particu
 
 ## Tests
 
-`tests/` runs the app in-process with `httpx.ASGITransport`, mocked providers (`httpx.MockTransport`, see
-`tests/helpers.py`) and `fakeredis` with Lua support in place of Valkey:
+`tests/` runs the app in-process with `httpx.ASGITransport` and mocked providers (`httpx.MockTransport`, see
+`tests/helpers.py`). They need a Valkey server at `localhost:6379`, and use its database 15, emptied around every
+test:
 
 ```sh
 uv run pytest

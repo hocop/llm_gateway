@@ -30,7 +30,7 @@ llm_gateway/
   app.py                  # FastAPI app: auth, /v1/models, proxy endpoint, streaming responses
 tests/
   helpers.py              # test config, mocked providers, gateway harness
-  conftest.py             # fixtures: fake Valkey, in-process gateway
+  conftest.py             # fixtures: test database in local Valkey, in-process gateway
   test_config.py, test_quota.py, test_app.py
 examples/config/          # example providers.toml, virtual_models.toml, virtual_keys.toml
 docs/proposals/           # design proposals written by the user
@@ -150,6 +150,7 @@ Keep this overview list up to date whenever a doc file is added, removed, or ren
 Keep this list up to date every time a note is added, in the format `note_name: one-sentence summary`.
 
 - `000_initial_design.md` - the gateway's initial design: TOML config, fallback routing and concurrency quotas as Valkey leases
+- `001_real_valkey_in_tests.md` - tests use database 15 of the local Valkey server instead of fakeredis
 
 ---
 

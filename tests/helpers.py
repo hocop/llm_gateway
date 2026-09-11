@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
-from fakeredis import FakeAsyncValkey
 from fastapi import FastAPI
+from valkey.asyncio import Valkey
 
 PROVIDERS_TOML = """
 [[providers]]
@@ -156,7 +156,7 @@ class Gateway:
     app: FastAPI
     client: httpx.AsyncClient
     providers: FakeProviders
-    valkey: FakeAsyncValkey
+    valkey: Valkey
 
     async def quota_usage(self, key: str, model: str) -> float:
         """Capacity taken by the current leases of a quota."""
