@@ -9,7 +9,8 @@ An OpenAI-compatible LLM gateway in front of llama.cpp and vLLM servers:
 - **Concurrency quotas** per key and virtual model, fractional values included, replace RPM/TPM limits. They are stored
   in Valkey as expiring leases, so all state is shared by replicas.
 
-Streaming, multimodal inputs, embeddings and other endpoints are passed through unchanged except for the model name.
+Streaming, multimodal inputs, embeddings and other model endpoints from an allowlist are passed through unchanged
+except for the model name.
 Typical load is low (1-20 RPS); robustness and failsafe behavior are the top priority. Design proposals are in
 `docs/proposals/`, and the current behavior is described in `docs/wiki/`.
 
@@ -144,7 +145,7 @@ Keep this overview list up to date whenever a doc file is added, removed, or ren
 - Sections, in order:
   1. **Why** — the problem/motivation.
   2. **How** — the approach taken.
-  3. **What other options were considered** — alternatives and why they were rejected.
+  3. **What other options were considered** — alternatives and why they were rejected. Do not add that portion if other options weren't explicitly discussed with developer
   4. **What was implemented** — the concrete result (files/systems touched, at a summary level).
 
 ### Change notes index
@@ -154,6 +155,7 @@ Keep this list up to date every time a note is added, in the format `note_name: 
 - `001_real_valkey_in_tests.md` - tests use database 15 of the local Valkey server instead of fakeredis
 - `002_real_providers.md` - real providers 3090 and stxh as virtual models balanced and smart, with quotas tested live
 - `003_review_by_qwen_flash.md` - fixes from the qwen review: no connection cap, stricter config validation, OpenAI-style 404/405, more tests
+- `004_model_endpoint_allowlist.md` - only allowlisted model endpoints are forwarded, so decoded `..` and `?` in paths can't reach provider admin endpoints
 
 ---
 

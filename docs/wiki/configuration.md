@@ -32,7 +32,7 @@ Python's `tomllib` reads TOML 1.0, where an inline table `{ ... }` must fit on o
 ```toml
 [[providers]]
 name = "vllm"
-url = "http://localhost:8000/v1"  # the path of an endpoint is appended, e.g. /chat/completions
+url = "http://localhost:8000/v1"  # the path of an allowed model endpoint is appended, e.g. /chat/completions
 key = "my-secret-key"             # optional, sent as "Authorization: Bearer ..."; empty means none
 ```
 

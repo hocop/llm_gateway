@@ -32,6 +32,23 @@ _ERROR_TYPES = {
     429: "rate_limit_error",
 }
 
+# Model endpoints of llama.cpp and vLLM. The path is appended to provider URLs, so anything else could reach
+# their admin endpoints: "../sleep" or an encoded "?" survive routing
+_MODEL_ENDPOINTS = frozenset(
+    {
+        "chat/completions",
+        "completions",
+        "embeddings",
+        "responses",
+        "messages",
+        "rerank",
+        "score",
+        "audio/transcriptions",
+        "audio/translations",
+        "audio/speech",
+    }
+)
+
 
 class _ProxiedResponse(StreamingResponse):
     """Streams an upstream response to the client, releasing its quota leases afterwards."""
@@ -108,7 +125,9 @@ def create_app(
 
     @app.post("/v1/{path:path}")
     async def proxy(path: str, request: Request, key: AuthorizedKey) -> StreamingResponse:
-        """Forwards any model endpoint: chat completions, completions, embeddings, audio and others."""
+        """Forwards a model endpoint: chat completions, completions, embeddings, audio and others."""
+        if path not in _MODEL_ENDPOINTS:
+            raise GatewayError(404, f"Endpoint /v1/{path} does not exist")
         client_request = await ClientRequest.parse(request, path)
         if client_request.model not in config.models:
             raise GatewayError(404, f"Model {client_request.model!r} does not exist")

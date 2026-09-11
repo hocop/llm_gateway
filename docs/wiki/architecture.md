@@ -14,9 +14,12 @@
 
 - `GET /v1/models` lists the virtual models the key may use, OpenAI-style, with extra `description` and
   `quotas` fields. `quotas` holds the key's quotas for the model and for every virtual model it routes to.
-- `POST /v1/{path}` forwards any model endpoint (`chat/completions`, `completions`, `embeddings`,
-  `audio/transcriptions`, `rerank`, ...) to `<provider url>/{path}`. JSON bodies and multipart forms are
-  supported; the `model` field is replaced by the real model name and everything else is sent unchanged.
+- `POST /v1/{path}` forwards a model endpoint to `<provider url>/{path}`. Only the endpoints in
+  `_MODEL_ENDPOINTS` are forwarded: `chat/completions`, `completions`, `embeddings`, `responses`, `messages`,
+  `rerank`, `score`, `audio/transcriptions`, `audio/translations` and `audio/speech`. Any other path is a 404
+  without contacting upstreams, so decoded `..` or `?` can't reach provider admin endpoints. JSON bodies and
+  multipart forms are supported; the `model` field is replaced by the real model name and everything else is
+  sent unchanged.
 - The key is sent as `Authorization: Bearer <secret>`. Gateway errors, unknown paths and methods included, are
   OpenAI-style `{"error": {"message", "type"}}`.
 

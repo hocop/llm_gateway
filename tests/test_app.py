@@ -111,6 +111,19 @@ async def test_unknown_endpoint_gets_openai_style_error(
     assert set(response.json()["error"]) == {"message", "type"}
 
 
+# Encoded slashes and question marks are decoded before routing, so they must not reach other upstream paths
+@pytest.mark.parametrize(
+    "path",
+    ["/v1/..%2F..%2Fsleep", "/v1/chat%2F..%2F..%2Fmetrics", "/v1/chat/completions%3Fdebug=1", "/v1/load_lora_adapter"],
+)
+async def test_endpoint_outside_allowlist_is_not_forwarded(gateway: Gateway, path: str) -> None:
+    response = await gateway.client.post(path, headers=auth("me"), json=chat("fast_model"))
+
+    assert response.status_code == 404
+    assert response.json()["error"]["type"] == "not_found_error"
+    assert gateway.providers.requests == []
+
+
 @pytest.mark.parametrize(
     ("content_type", "content", "status_code"),
     [
