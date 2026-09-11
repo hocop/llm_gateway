@@ -1,0 +1,14 @@
+[[virtual_models]]
+name = "fast_model"
+model = "vllm/qwen3.8_27B-fp8"
+description = "Fast model for everyday use"
+
+[[virtual_models]]
+name = "smart_model"
+model = "llama_cpp/qwen3.8_flash_next-GGUF"
+description = "Smart model for challenging tasks"
+
+[[virtual_models]]
+name = "any_model"
+model = ["/fast_model", "/smart_model"]  # no provider means this gateway
+description = "Will route to fast by default, and to smart if fast is not available"

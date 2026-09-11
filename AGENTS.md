@@ -1,7 +1,17 @@
 # Agents.md
 
 ## Project Overview
-TODO:
+An OpenAI-compatible LLM gateway in front of llama.cpp and vLLM servers:
+- **Virtual models** rename real models (`provider/model`) and can fall back through a list of targets, including other
+  virtual models (`/name`), when a model is unavailable or its quota is busy. Clients only see virtual models.
+- **Virtual keys** are configured in TOML, with secrets in `LLM_KEY_<NAME>` environment variables, and are allowed a set
+  of virtual models (wildcards supported).
+- **Concurrency quotas** per key and virtual model, fractional values included, replace RPM/TPM limits. They are stored
+  in Valkey as expiring leases, so all state is shared by replicas.
+
+Streaming, multimodal inputs, embeddings and other endpoints are passed through unchanged except for the model name.
+Typical load is low (1-20 RPS); robustness and failsafe behavior are the top priority. Design proposals are in
+`docs/proposals/`, and the current behavior is described in `docs/wiki/`.
 
 ### ⚠ CONSTRAINTS
 1. Run commands exactly as prompted here. Do not run `cd <project dir>` before every command. You are in the project root already. Do not add `2>&1`.
@@ -10,7 +20,34 @@ TODO:
 ---
 
 ## Project Structure Guide
-TODO:
+```
+main.py                   # entry point: runs uvicorn with the app factory
+llm_gateway/
+  settings.py             # runtime settings from environment variables
+  config.py               # TOML config: providers, virtual models, virtual keys; startup validation
+  quota.py                # concurrency quotas as expiring leases in Valkey
+  routing.py              # client request parsing, fallback routing under quotas
+  app.py                  # FastAPI app: auth, /v1/models, proxy endpoint, streaming responses
+tests/
+  helpers.py              # test config, mocked providers, gateway harness
+  conftest.py             # fixtures: fake Valkey, in-process gateway
+  test_config.py, test_quota.py, test_app.py
+examples/config/          # example providers.toml, virtual_models.toml, virtual_keys.toml
+docs/proposals/           # design proposals written by the user
+docs/wiki/                # up-to-date documentation
+docs/change_notes/        # records of big architectural decisions
+```
+
+---
+
+## Implementation requirements
+1. Python 3.12 with modern typing style.
+2. FastAPI as the backend framework.
+3. Valkey for all dynamic state, with credentials given in environment variables. Nothing dynamic is kept only in RAM.
+4. All usage paths must be covered by unit tests with mocked LLM endpoints. Run them with `uv run pytest`.
+5. `uv` is the only dependency manager: add dependencies with `uv add` (`uv add --dev` for dev ones). Never run
+   `uv pip install` in the venv.
+6. `ty` for type checking. Run it with `uv run ty check`.
 
 ---
 
@@ -90,7 +127,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 After every code change, update the relevant file(s) in `docs/wiki/` so they stay in sync with the code (treat this like the `cargo check` step: part of finishing a task, not optional cleanup).
 
 ### Docs overview
-TODO:
+- `docs/wiki/configuration.md` - running the gateway, environment variables and the TOML config files
+- `docs/wiki/architecture.md` - modules, API, routing and fallback rules, how quotas work, tests
 
 Keep this overview list up to date whenever a doc file is added, removed, or renamed.
 
@@ -111,7 +149,7 @@ Keep this overview list up to date whenever a doc file is added, removed, or ren
 ### Change notes index
 Keep this list up to date every time a note is added, in the format `note_name: one-sentence summary`.
 
-- `000_example.md` - example note, does not exist. Delete when actual note is added
+- `000_initial_design.md` - the gateway's initial design: TOML config, fallback routing and concurrency quotas as Valkey leases
 
 ---
 

@@ -1,0 +1,9 @@
+[[providers]]
+name = "llama_cpp"
+url = "http://localhost:8080/v1"
+key = ""  # unneeded
+
+[[providers]]
+name = "vllm"
+url = "http://localhost:8000/v1"
+key = "my-secret-key"

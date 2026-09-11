@@ -1,0 +1,26 @@
+# Secrets come from environment variables: LLM_KEY_ME, LLM_KEY_MY_FRIEND, LLM_KEY_MY_SERVICE_1
+
+[[virtual_keys]]
+name = "me"
+models = "*"  # wildcards supported
+quotas = [
+    { model = "fast_model", max_concurrency = 2 },
+    { model = "smart_model", max_concurrency = 1 },
+]
+
+[[virtual_keys]]
+name = "my_friend"
+models = ["fast_model", "smart_model"]
+quotas = [
+    { model = "fast_model", max_concurrency = 2 },
+    { model = "smart_model", max_concurrency = 0.5 },
+]
+
+[[virtual_keys]]
+name = "my_service_1"
+models = ["any_model"]
+# Quotas of the models any_model routes to apply as well
+quotas = [
+    { model = "fast_model", max_concurrency = 1.5 },
+    { model = "smart_model", max_concurrency = 0.5 },
+]

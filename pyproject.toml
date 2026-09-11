@@ -4,4 +4,26 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "anyio>=4.15.1",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "python-multipart>=0.0.32",
+    "uvicorn[standard]>=0.52.4",
+    "valkey>=6.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "fakeredis[lua]>=2.38.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ty>=0.0.80",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
