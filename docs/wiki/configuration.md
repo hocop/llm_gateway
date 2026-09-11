@@ -22,8 +22,8 @@ all quota state through Valkey, so any number of them can run at once.
 ## Config files
 
 Everything is validated at startup and the gateway refuses to start on any error: unknown fields, duplicate
-names, unknown providers or virtual models, reference cycles, quotas below `0.1`, missing or shared key
-secrets. See `examples/config/` for a complete example.
+names, provider URLs without `http://` or `https://`, unknown providers or virtual models, key model patterns
+matching no virtual model, reference cycles, quotas below `0.1`, missing or shared key secrets. See `examples/config/` for a complete example.
 
 Python's `tomllib` reads TOML 1.0, where an inline table `{ ... }` must fit on one line.
 

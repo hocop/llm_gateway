@@ -62,7 +62,7 @@ class _Strict(BaseModel):
 
 class Provider(_Strict):
     name: str
-    url: str
+    url: str = Field(pattern=r"^https?://[^/]+")
     key: str = ""  # empty means no Authorization header
 
 
@@ -174,8 +174,8 @@ def _check_routes(models: Mapping[str, VirtualModel], providers: Mapping[str, Pr
 def _check_keys(keys: Mapping[str, VirtualKey], models: Mapping[str, VirtualModel]) -> None:
     for key in keys.values():
         for pattern in key.models:
-            is_wildcard = any(char in pattern for char in "*?[")
-            if not is_wildcard and pattern not in models:
+            # Catches mistyped names and wildcard patterns alike
+            if not any(fnmatch.fnmatchcase(model, pattern) for model in models):
                 raise ConfigError(f"Virtual key {key.name!r} allows unknown virtual model {pattern!r}")
         quota_models = [quota.model for quota in key.quotas]
         for model in quota_models:

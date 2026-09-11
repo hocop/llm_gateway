@@ -17,11 +17,16 @@
 - `POST /v1/{path}` forwards any model endpoint (`chat/completions`, `completions`, `embeddings`,
   `audio/transcriptions`, `rerank`, ...) to `<provider url>/{path}`. JSON bodies and multipart forms are
   supported; the `model` field is replaced by the real model name and everything else is sent unchanged.
-- The key is sent as `Authorization: Bearer <secret>`. Gateway errors are OpenAI-style
-  `{"error": {"message", "type"}}`.
+- The key is sent as `Authorization: Bearer <secret>`. Gateway errors, unknown paths and methods included, are
+  OpenAI-style `{"error": {"message", "type"}}`.
 
-Upstream responses, streaming or not, are passed back byte for byte with their status and headers, so usage
-and other extra fields are preserved. The `model` field in responses keeps the real model name.
+Upstream response bodies, streaming or not, are passed back unchanged with their status and headers, so usage
+and other extra fields are preserved. Only a compressed body is decompressed, and sent without
+`Content-Encoding`. The `model` field in responses keeps the real model name.
+
+Upstream connections are not pooled with a limit, since quotas already limit concurrency: a request never waits
+for a free connection while holding a quota lease. When the client disconnects, Starlette stops the response,
+and the upstream connection is closed so that generation stops.
 
 ## Routing
 

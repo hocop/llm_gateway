@@ -1,13 +1,14 @@
 """FastAPI application exposing the OpenAI-compatible gateway API."""
 
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Annotated, Any
 
 import httpx
 from fastapi import Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 from valkey.asyncio import Valkey
 
@@ -26,6 +27,7 @@ _ERROR_TYPES = {
     401: "authentication_error",
     403: "permission_error",
     404: "not_found_error",
+    405: "invalid_request_error",
     415: "invalid_request_error",
     429: "rate_limit_error",
 }
@@ -34,26 +36,24 @@ _ERROR_TYPES = {
 class _ProxiedResponse(StreamingResponse):
     """Streams an upstream response to the client, releasing its quota leases afterwards."""
 
-    def __init__(self, upstream: UpstreamResponse, request: Request) -> None:
+    def __init__(self, upstream: UpstreamResponse) -> None:
         response = upstream.response
         headers = {name: value for name, value in response.headers.items() if name not in _SKIPPED_RESPONSE_HEADERS}
-        super().__init__(self._body(response, request), status_code=response.status_code, headers=headers)
+        super().__init__(response.aiter_bytes(), status_code=response.status_code, headers=headers)
         self._upstream = upstream
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        # Cleanup lives here rather than in the body generator, which may never start
+        # Cleanup lives here rather than in the body generator, which may never start.
+        # Starlette stops streaming when the client disconnects, so the upstream aborts generation too.
         try:
             await super().__call__(scope, receive, send)
         finally:
             await self._upstream.aclose()
 
-    @staticmethod
-    async def _body(response: httpx.Response, request: Request) -> AsyncIterator[bytes]:
-        async for chunk in response.aiter_bytes():
-            yield chunk
-            # Stop reading for a gone client, so the quota frees up and the upstream aborts generation
-            if await request.is_disconnected():
-                break
+
+def _error_response(status_code: int, message: str, headers: Mapping[str, str] | None = None) -> JSONResponse:
+    error_type = _ERROR_TYPES.get(status_code, "api_error")
+    return JSONResponse({"error": {"message": message, "type": error_type}}, status_code, headers)
 
 
 def create_app(
@@ -66,8 +66,12 @@ def create_app(
 
     @app.exception_handler(GatewayError)
     async def handle_gateway_error(request: Request, error: GatewayError) -> JSONResponse:
-        error_type = _ERROR_TYPES.get(error.status_code, "api_error")
-        return JSONResponse({"error": {"message": error.message, "type": error_type}}, error.status_code)
+        return _error_response(error.status_code, error.message)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_error(request: Request, error: StarletteHTTPException) -> JSONResponse:
+        # Unknown paths and methods, so that they get OpenAI-style errors too
+        return _error_response(error.status_code, error.detail, error.headers)
 
     async def authenticate(authorization: Annotated[str, Header()] = "") -> VirtualKey:
         scheme, _, secret = authorization.partition(" ")
@@ -111,7 +115,7 @@ def create_app(
         if not key.allows(client_request.model):
             raise GatewayError(403, f"Virtual key is not allowed to use model {client_request.model!r}")
         upstream = await router.open(key, client_request)
-        return _ProxiedResponse(upstream, request)
+        return _ProxiedResponse(upstream)
 
     return app
 
@@ -121,7 +125,11 @@ def create_app_from_env() -> FastAPI:
     settings = Settings.from_env()
     config = load_config(settings.config_dir)
     valkey = Valkey.from_url(settings.valkey_url, decode_responses=True)
-    http = httpx.AsyncClient(timeout=httpx.Timeout(settings.upstream_timeout, connect=10.0))
+    # No cap on connections: quotas limit concurrency, and a request must not wait for the pool while holding a lease
+    http = httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.upstream_timeout, connect=10.0),
+        limits=httpx.Limits(max_connections=None, max_keepalive_connections=20),
+    )
     quotas = QuotaStore(valkey)
     router = ModelRouter(config, quotas, http, quota_timeout=settings.quota_timeout)
 

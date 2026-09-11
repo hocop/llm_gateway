@@ -1,17 +1,23 @@
 import asyncio
+import contextlib
 import itertools
 import json
 import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 import pytest
+from starlette.requests import ClientDisconnect
 from starlette.types import Message
 from valkey.exceptions import ConnectionError as ValkeyConnectionError
 
+from llm_gateway.app import create_app_from_env
+from tests.conftest import VALKEY_URL
 from tests.helpers import (
     MESSAGES,
     SECRETS,
+    SECRETS_ENV,
     Gateway,
     Handler,
     auth,
@@ -20,8 +26,24 @@ from tests.helpers import (
     completion,
     eventually,
     refuse_connection,
+    responding,
     unavailable,
+    write_config,
 )
+
+
+async def test_app_from_env_starts_and_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    environ = SECRETS_ENV | {"LLM_GATEWAY_CONFIG_DIR": str(write_config(tmp_path)), "VALKEY_URL": VALKEY_URL}
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    app = create_app_from_env()
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+            response = await client.get("/v1/models", headers=auth("service"))
+
+    assert response.status_code == 200
+    assert [model["id"] for model in response.json()["data"]] == ["any_model"]
 
 
 async def test_models_list_shows_allowed_models_with_quotas(gateway: Gateway) -> None:
@@ -74,6 +96,19 @@ async def test_unknown_and_forbidden_models_are_rejected(gateway: Gateway) -> No
     assert unknown.status_code == 404
     assert forbidden.status_code == 403
     assert gateway.providers.requests == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "status_code"),
+    [("GET", "/v1/chat/completions", 405), ("PUT", "/v1/chat/completions", 405), ("GET", "/nope", 404)],
+)
+async def test_unknown_endpoint_gets_openai_style_error(
+    gateway: Gateway, method: str, path: str, status_code: int
+) -> None:
+    response = await gateway.client.request(method, path, headers=auth("me"))
+
+    assert response.status_code == status_code
+    assert set(response.json()["error"]) == {"message", "type"}
 
 
 @pytest.mark.parametrize(
@@ -196,7 +231,7 @@ async def test_multipart_request_is_sent_to_real_model(gateway: Gateway) -> None
     assert b"RIFF-audio" in upstream.content
 
 
-@pytest.mark.parametrize("failure", [refuse_connection, unavailable])
+@pytest.mark.parametrize("failure", [refuse_connection, unavailable, *map(responding, [404, 408, 429, 500])])
 async def test_failed_upstream_falls_back_to_next_model(gateway: Gateway, failure: Handler) -> None:
     gateway.providers.handlers["vllm.test"] = failure
     response = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("any_model"))
@@ -335,7 +370,9 @@ async def test_quota_store_outage_fails_only_limited_requests(
     assert unlimited.status_code == 200
 
 
-async def test_client_disconnect_stops_stream_and_releases_quota(gateway: Gateway) -> None:
+# Servers report a disconnect by receive() before ASGI spec 2.4 (uvicorn), and by send() raising OSError since
+@pytest.mark.parametrize("spec_version", ["2.3", "2.4"])
+async def test_client_disconnect_stops_stream_and_releases_quota(gateway: Gateway, spec_version: str) -> None:
     produced: list[int] = []
 
     async def endless_stream(request: httpx.Request) -> httpx.Response:
@@ -353,19 +390,24 @@ async def test_client_disconnect_stops_stream_and_releases_quota(gateway: Gatewa
     body = json.dumps(chat("fast_model", stream=True)).encode()
     incoming: list[Message] = [{"type": "http.request", "body": body, "more_body": False}]
 
+    def client_left() -> bool:
+        return any(message.get("body") for message in sent)
+
     async def receive() -> Message:
         if incoming:
             return incoming.pop(0)
-        while not any(message.get("body") for message in sent):
+        while not client_left():
             await asyncio.sleep(0.01)
         return {"type": "http.disconnect"}
 
     async def send(message: Message) -> None:
+        if spec_version == "2.4" and client_left():
+            raise OSError("Connection reset by peer")
         sent.append(message)
 
     scope = {
         "type": "http",
-        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "asgi": {"version": "3.0", "spec_version": spec_version},
         "http_version": "1.1",
         "method": "POST",
         "scheme": "http",
@@ -381,7 +423,8 @@ async def test_client_disconnect_stops_stream_and_releases_quota(gateway: Gatewa
         "server": ("gateway", 80),
     }
     async with asyncio.timeout(2):
-        await gateway.app(scope, receive, send)
+        with contextlib.suppress(ClientDisconnect):
+            await gateway.app(scope, receive, send)
 
     assert sent[0]["status"] == 200
     assert len(produced) < 5

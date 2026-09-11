@@ -141,6 +141,15 @@ async def unavailable(request: httpx.Request) -> httpx.Response:
     return httpx.Response(503, json={"error": "Loading model"})
 
 
+def responding(status_code: int) -> Handler:
+    """A provider that answers every request with an error status."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json={"error": "Failed"})
+
+    return handler
+
+
 def blocked_until(event: asyncio.Event) -> Handler:
     """A provider that answers only once the event is set, to keep requests running."""
 

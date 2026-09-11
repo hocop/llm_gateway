@@ -59,6 +59,7 @@ def test_key_access_and_quotas() -> None:
         ({"providers": PROVIDERS_TOML + PROVIDERS_TOML}, "Duplicate provider 'llama_cpp'"),
         ({"providers": PROVIDERS_TOML.replace("url", "address")}, "providers.toml"),
         ({"providers": "[[providers]\n"}, "providers.toml"),
+        ({"providers": PROVIDERS_TOML.replace("http://llama.test/v1", "llama.test/v1")}, "should match pattern"),
         (
             {"virtual_models": VIRTUAL_MODELS_TOML.replace('"vllm/qwen-fast"', '"openai/gpt"')},
             "Virtual model 'fast_model' routes to unknown provider 'openai'",
@@ -77,6 +78,10 @@ def test_key_access_and_quotas() -> None:
         (
             {"virtual_keys": VIRTUAL_KEYS_TOML.replace('["fast_model", "smart_model"]', '["fast_model", "gpt"]')},
             "Virtual key 'limited' allows unknown virtual model 'gpt'",
+        ),
+        (
+            {"virtual_keys": VIRTUAL_KEYS_TOML.replace('["fast_model", "smart_model"]', '["fast_model", "smrt_*"]')},
+            "Virtual key 'limited' allows unknown virtual model 'smrt_*'",
         ),
         (
             {"virtual_keys": VIRTUAL_KEYS_TOML.replace('model = "smart_model", max_concurrency = 0.5', 'model = "gpt"')},

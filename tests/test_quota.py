@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from valkey.asyncio import Valkey
+from valkey.exceptions import ConnectionError as ValkeyConnectionError
 
 from llm_gateway.quota import Lease, QuotaStore
 from tests.helpers import eventually
@@ -74,6 +75,30 @@ async def test_heartbeat_keeps_running_request_leased(store: QuotaStore) -> None
 
     assert await store.try_acquire("key", "model", 1) is None
     lease.release()
+
+
+async def test_lease_outlives_quota_store_outage(
+    store: QuotaStore, valkey: Valkey, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def fail(*args: object) -> None:
+        raise ValkeyConnectionError("Connection refused")
+
+    lease = await acquire(store, 1)
+    monkeypatch.setattr(valkey, "eval", fail)
+    await asyncio.sleep(LEASE_TTL / 2)  # a refresh fails
+    monkeypatch.undo()
+    await asyncio.sleep(LEASE_TTL)  # refreshes resumed, so the lease didn't expire
+
+    assert await store.try_acquire("key", "model", 1) is None
+    monkeypatch.setattr(valkey, "zrem", fail)
+    lease.release()
+
+    async def is_free() -> bool:
+        return await store.try_acquire("key", "model", 1) is not None
+
+    await eventually(is_free)  # the lease that failed to be removed expires
+    assert "Failed to refresh quota lease" in caplog.text
+    assert "Failed to remove quota lease" in caplog.text
 
 
 async def test_leases_of_crashed_replica_expire(valkey: Valkey) -> None:

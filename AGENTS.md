@@ -153,6 +153,7 @@ Keep this list up to date every time a note is added, in the format `note_name: 
 - `000_initial_design.md` - the gateway's initial design: TOML config, fallback routing and concurrency quotas as Valkey leases
 - `001_real_valkey_in_tests.md` - tests use database 15 of the local Valkey server instead of fakeredis
 - `002_real_providers.md` - real providers 3090 and stxh as virtual models balanced and smart, with quotas tested live
+- `003_review_by_qwen_flash.md` - fixes from the qwen review: no connection cap, stricter config validation, OpenAI-style 404/405, more tests
 
 ---
 
@@ -161,7 +162,7 @@ Keep this list up to date every time a note is added, in the format `note_name: 
 `docs/proposals/` holds design proposals the user writes for changes to be implemented later. Proposals are written by the user (not authored by agents), and describe upcoming work before it happens — this is the reverse direction from change notes, which record work after it happens.
 
 - File: `docs/proposals/{i:03n}_{proposal_name}.md`, indexed from `001` upward, matching the format of the change notes index.
-- **A proposal's index matches the change note that eventually implements it.** E.g. `docs/proposals/001_foo.md` is implemented and documented in `docs/change_notes/001_foo.md`.
+- A change note that implements a proposal must refer to it via its index. E.g. `docs/proposals/001_foo.md` is implemented and documented in `docs/change_notes/001_p001_foo.md`. Note and proposal indexes are not always the same.
 - When asked to implement a proposal, read the corresponding file in `docs/proposals/` fully first, and treat it as the source of truth for the design — ask the user if anything in it is ambiguous or looks outdated relative to the current code.
 - Do not edit files in `docs/proposals/` unless the user explicitly asks; they are the user's own notes.
 
