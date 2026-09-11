@@ -332,8 +332,31 @@ async def test_quota_wait_times_out(gateway: Gateway) -> None:
 
     assert second.status_code == 429
     assert second.json()["error"]["type"] == "rate_limit_error"
+    assert await gateway.queue_length("limited", "fast_model") == 0  # the request left the queue
     finish.set()
     assert (await first).status_code == 200
+
+
+async def test_waiting_requests_are_served_in_arrival_order(gateway: Gateway) -> None:
+    finish = asyncio.Event()
+    gateway.providers.handlers["vllm.test"] = blocked_until(finish)
+
+    async def post(user: str) -> httpx.Response:
+        request = chat("fast_model", user=user)  # limited to 1 concurrent request
+        return await gateway.client.post("/v1/chat/completions", headers=auth("limited"), json=request)
+
+    first = asyncio.create_task(post("first"))
+    await eventually(lambda: _request_count_is(gateway, 1))
+    second = asyncio.create_task(post("second"))
+    await eventually(lambda: _queue_length_is(gateway, "limited", "fast_model", 1))
+    third = asyncio.create_task(post("third"))
+    await eventually(lambda: _queue_length_is(gateway, "limited", "fast_model", 2))
+
+    finish.set()
+    assert [(await request).status_code for request in [first, second, third]] == [200, 200, 200]
+    users = [json.loads(request.content)["user"] for request in gateway.providers.requests]
+    assert users == ["first", "second", "third"]
+    assert await gateway.queue_length("limited", "fast_model") == 0
 
 
 async def test_busy_model_falls_through_to_next_model(gateway: Gateway) -> None:
@@ -349,6 +372,7 @@ async def test_busy_model_falls_through_to_next_model(gateway: Gateway) -> None:
 
     assert second.status_code == 200
     assert second.json()["model"] == "qwen-smart"
+    assert await gateway.queue_length("service", "fast_model") == 0  # queued for fast_model, left once served
     finish.set()
     assert (await first).json()["model"] == "qwen-fast"
 
@@ -450,3 +474,7 @@ async def _usage_is(gateway: Gateway, key: str, model: str, usage: float) -> boo
 
 async def _request_count_is(gateway: Gateway, count: int) -> bool:
     return len(gateway.providers.requests) == count
+
+
+async def _queue_length_is(gateway: Gateway, key: str, model: str, length: int) -> bool:
+    return await gateway.queue_length(key, model) == length

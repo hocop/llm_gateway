@@ -107,6 +107,10 @@ def test_key_access_and_quotas() -> None:
             {"virtual_keys": VIRTUAL_KEYS_TOML.replace("max_concurrency = 0.5", "max_concurrency = 0.05")},
             "greater than or equal to 0.1",
         ),
+        (
+            {"virtual_keys": VIRTUAL_KEYS_TOML.replace("max_concurrency = 0.5", "max_concurrency = 0.505")},
+            "multiple of 0.01",
+        ),
     ],
 )
 def test_invalid_config_is_rejected(tmp_path: Path, files: dict[str, str], error: str) -> None:

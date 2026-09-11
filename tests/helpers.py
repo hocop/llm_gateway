@@ -170,7 +170,11 @@ class Gateway:
     async def quota_usage(self, key: str, model: str) -> float:
         """Capacity taken by the current leases of a quota."""
         members = await self.valkey.zrange(f"llm_gateway:quota:{key}:{model}", 0, -1)
-        return sum(float(member.rpartition("|")[2]) for member in members)
+        return sum(int(member.rpartition("|")[2]) for member in members) / 100
+
+    async def queue_length(self, key: str, model: str) -> int:
+        """Number of tickets in the queue of a quota."""
+        return await self.valkey.zcard(f"llm_gateway:queue:{key}:{model}")
 
 
 async def eventually(condition: Callable[[], Awaitable[bool]], timeout: float = 2.0) -> None:

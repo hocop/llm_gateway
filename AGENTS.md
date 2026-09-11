@@ -156,6 +156,7 @@ Keep this list up to date every time a note is added, in the format `note_name: 
 - `002_real_providers.md` - real providers 3090 and stxh as virtual models balanced and smart, with quotas tested live
 - `003_review_by_qwen_flash.md` - fixes from the qwen review: no connection cap, stricter config validation, OpenAI-style 404/405, more tests
 - `004_model_endpoint_allowlist.md` - only allowlisted model endpoints are forwarded, so decoded `..` and `?` in paths can't reach provider admin endpoints
+- `005_p001_b1_quota_waiting.md` - requests waiting for quota are served in arrival order through ticket queues and woken up by Valkey pub/sub; budgets are integer hundredths
 
 ---
 

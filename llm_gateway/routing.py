@@ -1,6 +1,5 @@
 """Routing a client request for a virtual model to upstream providers, under the key's quotas."""
 
-import asyncio
 import enum
 import logging
 import time
@@ -15,7 +14,7 @@ from starlette.requests import Request
 from valkey.exceptions import ValkeyError
 
 from llm_gateway.config import GatewayConfig, Provider, UpstreamRoute, VirtualKey, VirtualModel
-from llm_gateway.quota import Lease, QuotaStore
+from llm_gateway.quota import Lease, QuotaStore, Ticket
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +107,7 @@ class _Attempt:
 
     key: VirtualKey
     request: ClientRequest
+    ticket: Ticket  # places in the queues of busy quotas
     failed: set[UpstreamRoute] = field(default_factory=set)
     last_error: httpx.Response | None = None  # already read, safe to return to the client
 
@@ -121,28 +121,31 @@ class ModelRouter:
         quotas: QuotaStore,
         http: httpx.AsyncClient,
         quota_timeout: float,
-        poll_interval: float = 0.2,
     ) -> None:
         self._config = config
         self._quotas = quotas
         self._http = http
         self._quota_timeout = quota_timeout
-        self._poll_interval = poll_interval
 
     async def open(self, key: VirtualKey, request: ClientRequest) -> UpstreamResponse:
         """Open the first route that has free quota and a working upstream.
 
-        While all working routes are busy, waits for quota up to the quota timeout.
+        While all working routes are busy, waits for quota up to the quota timeout, in arrival order.
         When every route failed, returns the last upstream error response as is,
         or raises a 502 error if no upstream responded at all.
         """
-        attempt = _Attempt(key, request)
+        attempt = _Attempt(key, request, self._quotas.ticket())
         model = self._config.models[request.model]
         deadline = time.monotonic() + self._quota_timeout
-        while (outcome := await self._try_model(model, attempt)) is _Outcome.BUSY:
-            if time.monotonic() >= deadline:
-                raise GatewayError(429, f"Quota for model {model.name!r} is exhausted, timed out waiting for it")
-            await asyncio.sleep(self._poll_interval)
+        try:
+            while (outcome := await self._try_model(model, attempt)) is _Outcome.BUSY:
+                if (remaining := deadline - time.monotonic()) <= 0:
+                    raise GatewayError(429, f"Quota for model {model.name!r} is exhausted, timed out waiting for it")
+                await attempt.ticket.wait(remaining)
+        finally:
+            # Leaving the queues must finish even when the client request is being cancelled
+            with anyio.CancelScope(shield=True):
+                await attempt.ticket.aclose()
 
         if isinstance(outcome, UpstreamResponse):
             return outcome
@@ -155,7 +158,7 @@ class ModelRouter:
         lease = None
         if (max_concurrency := attempt.key.max_concurrency(model.name)) is not None:
             try:
-                lease = await self._quotas.try_acquire(attempt.key.name, model.name, max_concurrency)
+                lease = await self._quotas.try_acquire(attempt.key.name, model.name, max_concurrency, attempt.ticket)
             except ValkeyError as error:
                 raise GatewayError(503, "Quota store is unavailable") from error
             if lease is None:
@@ -177,7 +180,9 @@ class ModelRouter:
                     outcome = _Outcome.BUSY
         finally:
             if lease is not None:
-                lease.release()
+                # Not used by any response, so waiters are not woken: requests waiting for nested quotas
+                # would otherwise wake each other up endlessly
+                lease.release(wake_waiters=False)
         return outcome
 
     async def _try_upstream(self, route: UpstreamRoute, attempt: _Attempt) -> UpstreamResponse | _Outcome:

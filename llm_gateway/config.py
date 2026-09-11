@@ -74,7 +74,7 @@ class VirtualModel(_Strict):
 
 class Quota(_Strict):
     model: str
-    max_concurrency: float = Field(ge=MIN_BUDGET)
+    max_concurrency: float = Field(ge=MIN_BUDGET, multiple_of=0.01)  # quotas count capacity in hundredths
 
 
 class VirtualKey(_Strict):

@@ -41,10 +41,10 @@ A target is skipped when:
 - its upstream **failed**: connection error, timeout, or status 404, 408, 429 or 5xx. Other statuses, like
   400, are returned to the client as they are. A failed upstream is not retried within the same request.
 
-The first working upstream wins. If some targets were busy, the whole walk repeats every 0.2 s until
-`LLM_GATEWAY_QUOTA_TIMEOUT`, then fails with 429. If every target failed, the client gets the last upstream
-error response, or 502 when no upstream responded at all. If Valkey is unreachable, requests needing a quota
-fail with 503, while requests without quotas keep working.
+The first working upstream wins. If some targets were busy, the request waits for quota (see
+[Waiting](#waiting)) and walks again, up to `LLM_GATEWAY_QUOTA_TIMEOUT`, then fails with 429. If every target
+failed, the client gets the last upstream error response, or 502 when no upstream responded at all. If Valkey
+is unreachable, requests needing a quota fail with 503, while requests without quotas keep working.
 
 Fallback happens only before the response starts. An upstream failing mid-stream aborts the client connection.
 
@@ -55,11 +55,13 @@ worker with capacity `c` that spent `t` seconds on a request idles `t * (1 - c) 
 the next one.
 
 Implementation (`quota.py`): every quota is a Valkey sorted set of leases. A member is `<lease id>|<budget>`,
-its score is the lease expiry time (Valkey server time, so replica clocks don't matter).
+with the budget in integer hundredths, and its score is the lease expiry time (Valkey server time, so replica
+clocks don't matter).
 
-1. **Acquire** runs one Lua script, atomic in Valkey: drop expired leases, sum budgets of the rest, and, if at
-   least `0.1` is free, add a lease with `budget = min(1, free)`. Usage is recomputed from scratch every time,
-   so floating point errors never accumulate.
+1. **Acquire** runs one Lua script, atomic in Valkey: drop expired leases, sum budgets of the rest, set a whole
+   unit aside for every request queued earlier (see [Waiting](#waiting)), and, if at least `0.1` is still
+   free, add a lease with `budget = min(1, free)`. Usage is recomputed from scratch every time in integers, so
+   it is exact.
 2. While the request runs, a background task **refreshes** the lease expiry every `ttl / 3` (TTL is 30 s).
 3. When the response is fully sent or the client disconnects, the lease is **released**: it is kept, still
    refreshed, for the residual time `elapsed * (1 - budget) / budget`, then removed. The response is not
@@ -68,7 +70,26 @@ its score is the lease expiry time (Valkey server time, so replica clocks don't 
    residual times are dropped the same way.
 
 Nested quotas are taken outer to inner, and never held while waiting for another quota, so they can't deadlock.
-Waiting is polling: requests waiting for the same quota are served in no particular order.
+
+### Waiting
+
+Requests waiting for the same quota are served in arrival order, and woken up by Valkey pub/sub:
+
+1. A request that finds a quota busy puts a **ticket** in the quota's queue, another sorted set. A member is
+   `<arrival time>|<ticket id>`, its score is the ticket expiry time. The ticket is refreshed on every retry.
+2. Acquire sets a whole unit aside for every ticket that arrived earlier than the request's own, or for all of
+   them if the request has none. Freed capacity goes to the oldest ticket first, and capacity beyond what the
+   tickets can take is free for anyone. A ticket leaves a queue when it gets a lease there, and all tickets of
+   a request leave once it is routed: served, failed or timed out.
+3. A waiting request subscribes to the channels of its queues, named like them. Removing a lease or a ticket
+   publishes there, and the waiting requests walk their routes again.
+4. Expired leases and tickets send no message, so a waiting request walks again at least every second. A
+   ticket expires 3 s after its last retry: its request is gone, or busy trying another route.
+5. Leases not used by any response are removed without a message, as requests waiting for nested quotas would
+   otherwise wake each other up endlessly.
+
+Pub/sub channels are shared by all databases of a Valkey server, so gateways using different databases of one
+server can wake up each other's requests, which only costs them an extra walk.
 
 ## Tests
 

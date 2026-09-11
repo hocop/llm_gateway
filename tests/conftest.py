@@ -29,9 +29,10 @@ async def gateway(tmp_path: Path, valkey: Valkey) -> AsyncIterator[Gateway]:
     """The gateway app with test config, mocked providers and the test Valkey database."""
     config = load_config(write_config(tmp_path), SECRETS_ENV)
     providers = FakeProviders()
-    quotas = QuotaStore(valkey, lease_ttl=5.0)
+    # Polling is slower than QUOTA_TIMEOUT, so waiting requests get quota only when woken up by messages
+    quotas = QuotaStore(valkey, lease_ttl=5.0, poll_interval=1.0)
     async with httpx.AsyncClient(transport=httpx.MockTransport(providers)) as http:
-        router = ModelRouter(config, quotas, http, quota_timeout=QUOTA_TIMEOUT, poll_interval=0.01)
+        router = ModelRouter(config, quotas, http, quota_timeout=QUOTA_TIMEOUT)
         app = create_app(config, router)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
             yield Gateway(app, client, providers, valkey)
