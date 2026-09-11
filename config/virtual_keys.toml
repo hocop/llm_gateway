@@ -1,0 +1,9 @@
+# Secrets come from environment variables: LLM_KEY_ME
+
+[[virtual_keys]]
+name = "me"
+models = "*"
+quotas = [
+    { model = "balanced", max_concurrency = 1.5 },
+    { model = "smart", max_concurrency = 0.5 },
+]

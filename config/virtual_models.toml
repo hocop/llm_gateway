@@ -1,0 +1,9 @@
+[[virtual_models]]
+name = "balanced"
+model = "3090/llm_at_home"
+description = "Qwen3.8 27B FP8 on the 3090"
+
+[[virtual_models]]
+name = "smart"
+model = "stxh/llm_at_home"
+description = "Bigger and slower model on stxh"

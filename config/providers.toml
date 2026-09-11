@@ -1,0 +1,7 @@
+[[providers]]
+name = "3090"
+url = "http://10.7.0.3:11434/v1"  # vLLM
+
+[[providers]]
+name = "stxh"
+url = "http://10.7.0.4:8080/v1"  # llama.cpp
