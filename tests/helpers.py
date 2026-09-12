@@ -33,7 +33,7 @@ model = "llama_cpp/qwen-smart"
 description = "Smart model"
 
 [[virtual_models]]
-name = "any_model"
+name = "first_available"
 model = ["/fast_model", "/smart_model"]
 description = "Fast model, or smart model when fast is unavailable"
 
@@ -57,7 +57,7 @@ quotas = [
 
 [[virtual_keys]]
 name = "service"
-models = ["any_model"]
+models = ["first_available"]
 quotas = [
     { model = "fast_model", max_concurrency = 1 },
     { model = "smart_model", max_concurrency = 1 },

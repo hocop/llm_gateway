@@ -43,7 +43,7 @@ async def test_app_from_env_starts_and_stops(tmp_path: Path, monkeypatch: pytest
             response = await client.get("/v1/models", headers=auth("service"))
 
     assert response.status_code == 200
-    assert [model["id"] for model in response.json()["data"]] == ["any_model"]
+    assert [model["id"] for model in response.json()["data"]] == ["first_available"]
 
 
 async def test_models_list_shows_allowed_models_with_quotas(gateway: Gateway) -> None:
@@ -52,7 +52,7 @@ async def test_models_list_shows_allowed_models_with_quotas(gateway: Gateway) ->
     service = (await gateway.client.get("/v1/models", headers=auth("service"))).json()
 
     assert me["object"] == "list"
-    assert [model["id"] for model in me["data"]] == ["fast_model", "smart_model", "any_model", "embedding_model"]
+    assert [model["id"] for model in me["data"]] == ["fast_model", "smart_model", "first_available", "embedding_model"]
     assert all(model["quotas"] == [] for model in me["data"])
 
     assert [model["id"] for model in limited["data"]] == ["fast_model", "smart_model"]
@@ -66,10 +66,10 @@ async def test_models_list_shows_allowed_models_with_quotas(gateway: Gateway) ->
         "quotas": [{"model": "smart_model", "max_concurrency": 0.5}],
     }
 
-    # Quotas of the models any_model routes to are listed too
-    [any_model] = service["data"]
-    assert any_model["id"] == "any_model"
-    assert any_model["quotas"] == [
+    # Quotas of the models first_available routes to are listed too
+    [first_available] = service["data"]
+    assert first_available["id"] == "first_available"
+    assert first_available["quotas"] == [
         {"model": "fast_model", "max_concurrency": 1},
         {"model": "smart_model", "max_concurrency": 1},
     ]
@@ -91,7 +91,7 @@ async def test_invalid_virtual_key_is_rejected(gateway: Gateway, headers: dict[s
 
 async def test_unknown_and_forbidden_models_are_rejected(gateway: Gateway) -> None:
     unknown = await gateway.client.post("/v1/chat/completions", headers=auth("me"), json=chat("gpt-5"))
-    forbidden = await gateway.client.post("/v1/chat/completions", headers=auth("limited"), json=chat("any_model"))
+    forbidden = await gateway.client.post("/v1/chat/completions", headers=auth("limited"), json=chat("first_available"))
 
     assert unknown.status_code == 404
     assert forbidden.status_code == 403
@@ -247,7 +247,7 @@ async def test_multipart_request_is_sent_to_real_model(gateway: Gateway) -> None
 @pytest.mark.parametrize("failure", [refuse_connection, unavailable, *map(responding, [404, 408, 429, 500])])
 async def test_failed_upstream_falls_back_to_next_model(gateway: Gateway, failure: Handler) -> None:
     gateway.providers.handlers["vllm.test"] = failure
-    response = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("any_model"))
+    response = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
 
     assert response.status_code == 200
     assert response.json()["model"] == "qwen-smart"
@@ -262,7 +262,7 @@ async def test_client_error_is_returned_without_fallback(gateway: Gateway) -> No
         return httpx.Response(400, json={"error": {"message": "Prompt is too long"}})
 
     gateway.providers.handlers["vllm.test"] = bad_request
-    response = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("any_model"))
+    response = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
 
     assert response.status_code == 400
     assert response.json() == {"error": {"message": "Prompt is too long"}}
@@ -272,7 +272,7 @@ async def test_client_error_is_returned_without_fallback(gateway: Gateway) -> No
 async def test_last_upstream_error_is_returned_when_all_fail(gateway: Gateway) -> None:
     gateway.providers.handlers["vllm.test"] = unavailable
     gateway.providers.handlers["llama.test"] = unavailable
-    response = await gateway.client.post("/v1/chat/completions", headers=auth("me"), json=chat("any_model"))
+    response = await gateway.client.post("/v1/chat/completions", headers=auth("me"), json=chat("first_available"))
 
     assert response.status_code == 503
     assert response.json() == {"error": "Loading model"}
@@ -282,7 +282,7 @@ async def test_last_upstream_error_is_returned_when_all_fail(gateway: Gateway) -
 async def test_bad_gateway_when_no_upstream_responds(gateway: Gateway) -> None:
     gateway.providers.handlers["vllm.test"] = refuse_connection
     gateway.providers.handlers["llama.test"] = refuse_connection
-    response = await gateway.client.post("/v1/chat/completions", headers=auth("me"), json=chat("any_model"))
+    response = await gateway.client.post("/v1/chat/completions", headers=auth("me"), json=chat("first_available"))
 
     assert response.status_code == 502
     assert response.json()["error"]["type"] == "api_error"
@@ -364,11 +364,11 @@ async def test_busy_model_falls_through_to_next_model(gateway: Gateway) -> None:
     gateway.providers.handlers["vllm.test"] = blocked_until(finish)
 
     first = asyncio.create_task(
-        gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("any_model"))
+        gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
     )
     await eventually(lambda: _request_count_is(gateway, 1))
     # fast_model quota of the key is taken, so smart_model serves the next request
-    second = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("any_model"))
+    second = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
 
     assert second.status_code == 200
     assert second.json()["model"] == "qwen-smart"

@@ -36,7 +36,7 @@ model = llama_cpp/qwen3.8_flash_next-GGUF
 description = "Smart model for challenging tasks"
 
 [[virtual_models]]
-name = any_model
+name = first_available
 model = ["/fast_model", "/smart_model"]  # no provider means this gateway
 description = "Will route to fast by default, and to slow if fast is not available"
 ```
@@ -82,7 +82,7 @@ quotas = [
 
 [[virtual_keys]]
 name = my_service_1
-models = ['any_model']
+models = ['first_available']
 quotas = [
 	{
 		model = 'fast_model',

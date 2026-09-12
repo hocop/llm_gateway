@@ -18,8 +18,8 @@ quotas = [
 
 [[virtual_keys]]
 name = "my_service_1"
-models = ["any_model"]
-# Quotas of the models any_model routes to apply as well
+models = ["first_available"]
+# Quotas of the models first_available routes to apply as well
 quotas = [
     { model = "fast_model", max_concurrency = 1.5 },
     { model = "smart_model", max_concurrency = 0.5 },

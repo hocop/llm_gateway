@@ -11,4 +11,4 @@ wheels/
 uv.lock
 
 .env
-config
+config/

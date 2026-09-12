@@ -45,7 +45,7 @@ model = "vllm/qwen3.8_27B-fp8"  # provider/real_model; only the first slash sepa
 description = "Fast model for everyday use"
 
 [[virtual_models]]
-name = "any_model"
+name = "first_available"
 model = ["/fast_model", "llama_cpp/qwen3.8_flash_next-GGUF"]  # tried in order
 description = "Fast model, or smart model when fast is unavailable"
 ```
@@ -58,16 +58,16 @@ description = "Fast model, or smart model when fast is unavailable"
 ```toml
 [[virtual_keys]]
 name = "my_service_1"  # lowercase letters, digits and underscores
-models = ["any_model"]  # names or wildcard patterns, e.g. "*" or ["fast_*"]
+models = ["first_available"]  # names or wildcard patterns, e.g. "*" or ["fast_*"]
 quotas = [
     { model = "fast_model", max_concurrency = 1.5 },
     { model = "smart_model", max_concurrency = 0.5 },
 ]
 ```
 
-- `models` lists the virtual models the key may request directly. Access to `any_model` also allows using the
+- `models` lists the virtual models the key may request directly. Access to `first_available` also allows using the
   models it routes to *through* it.
 - `quotas` limit concurrency per virtual model, including models reached through references: above,
-  `my_service_1` requesting `any_model` is limited by the `fast_model` quota while routed to `fast_model`.
+  `my_service_1` requesting `first_available` is limited by the `fast_model` quota while routed to `fast_model`.
   A model without a quota is unlimited for the key. How `max_concurrency` works is described in
   [architecture.md](architecture.md#quotas).

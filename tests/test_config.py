@@ -21,8 +21,8 @@ def test_example_config_loads() -> None:
     config = load_config(EXAMPLE_CONFIG_DIR, environ)
 
     assert config.models["fast_model"].routes == (UpstreamRoute("vllm", "qwen3.8_27B-fp8"),)
-    assert config.models["any_model"].routes == (VirtualRoute("fast_model"), VirtualRoute("smart_model"))
-    assert config.referenced_models("any_model") == ["any_model", "fast_model", "smart_model"]
+    assert config.models["first_available"].routes == (VirtualRoute("fast_model"), VirtualRoute("smart_model"))
+    assert config.referenced_models("first_available") == ["first_available", "fast_model", "smart_model"]
     assert config.keys["my_friend"].max_concurrency("smart_model") == 0.5
     assert config.find_key("c") is config.keys["my_service_1"]
 
@@ -66,10 +66,10 @@ def test_key_access_and_quotas() -> None:
         ),
         (
             {"virtual_models": VIRTUAL_MODELS_TOML.replace('"/smart_model"', '"/missing"')},
-            "Virtual model 'any_model' routes to unknown virtual model 'missing'",
+            "Virtual model 'first_available' routes to unknown virtual model 'missing'",
         ),
         (
-            {"virtual_models": VIRTUAL_MODELS_TOML.replace('"llama_cpp/qwen-smart"', '"/any_model"')},
+            {"virtual_models": VIRTUAL_MODELS_TOML.replace('"llama_cpp/qwen-smart"', '"/first_available"')},
             "references itself",
         ),
         ({"virtual_models": VIRTUAL_MODELS_TOML.replace('"vllm/qwen-fast"', '"qwen-fast"')}, "'provider/model'"),
