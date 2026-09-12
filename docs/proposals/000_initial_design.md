@@ -129,7 +129,7 @@ Better implementation is through dynamic variable, stored in external cache (red
 Then for each request we do:
 
 ```python
-async def process_request(request, key: str):
+async def process_request(request, key: str, output_queue: asyncio.Queue):
 	budget_taken: float
 	eps = 0.1  # reasonable
 	max_concurrency: float = get_from_config(key, 'max_c')
@@ -152,6 +152,7 @@ async def process_request(request, key: str):
 	# Process the request
 	start = time.time()
 	result = await call_llm(request)
+	await output_queue.put(result)  # this one is newly added. No need for client to wait on result, only on the quota for the next request.
 	elapsed = time.time() - start
 
 	# Sleep the residual before giving the capacity back

@@ -4,6 +4,14 @@
 name = "me"
 models = "*"
 quotas = [
+    { model = "balanced", max_concurrency = 2.0 },
+    { model = "smart", max_concurrency = 1.0 },
+]
+
+[[virtual_keys]]
+name = "service_1"
+models = ["any"]
+quotas = [
     { model = "balanced", max_concurrency = 1.5 },
     { model = "smart", max_concurrency = 0.5 },
 ]

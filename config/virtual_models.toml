@@ -6,4 +6,9 @@ description = "Qwen3.8 27B FP8 on the 3090"
 [[virtual_models]]
 name = "smart"
 model = "stxh/llm_at_home"
-description = "Bigger and slower model on stxh"
+description = "Qwen3.8 Flash Q4 on stxh"
+
+[[virtual_models]]
+name = "any"
+model = ["/balanced", "/smart"]
+description = "Tries balanced model first, then smart one if balanced is not available"
