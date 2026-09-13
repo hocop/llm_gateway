@@ -28,8 +28,9 @@ extra fields are preserved. Only a compressed body is decompressed, and sent wit
 
 Successful `application/json` and `text/event-stream` bodies are **relabelled**, so clients never see a real
 model name: the `model` field becomes the virtual model the client asked for, and the first body carrying one
-also gets `last_virtual_model`, the virtual model whose route served the request, and `provider`. Later frames
-of a stream get only `model`, keeping them small. Event streams are relabelled line by line, since chunks may
+also gets `extra_fields` with `last_virtual_model`, the virtual model whose route served the request, and
+`provider`. They are nested there, as Bifrost does, so they never clash with fields of the response schema. Later
+frames of a stream get only `model`, keeping them small. Event streams are relabelled line by line, since chunks may
 split a frame anywhere. Bodies with no `model` field, audio and other binary bodies, and upstream error
 responses are left exactly as they are.
 

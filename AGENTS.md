@@ -11,7 +11,7 @@ An OpenAI-compatible LLM gateway in front of llama.cpp and vLLM servers:
 
 Streaming, multimodal inputs, embeddings and other model endpoints from an allowlist are passed through unchanged
 except for the model name: requests carry the real one to the provider, and successful JSON and event-stream
-responses are relabelled back to the virtual model the client asked for, plus `last_virtual_model` and `provider`.
+responses are relabelled back to the virtual model the client asked for, plus `last_virtual_model` and `provider` in `extra_fields`.
 Typical load is low (1-20 RPS); robustness and failsafe behavior are the top priority. Design proposals are in
 `docs/proposals/`, and the current behavior is described in `docs/wiki/`.
 

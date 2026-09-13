@@ -158,7 +158,7 @@ async def test_chat_completion_is_sent_to_real_model(gateway: Gateway) -> None:
 
     assert response.status_code == 200
     # usage and other fields are preserved, the real model name is replaced by the virtual one
-    assert response.json() == completion("fast_model") | {"last_virtual_model": "fast_model", "provider": "vllm"}
+    assert response.json() == completion("fast_model") | {"extra_fields": {"last_virtual_model": "fast_model", "provider": "vllm"}}
     [upstream] = gateway.providers.requests
     assert str(upstream.url) == "http://vllm.test/v1/chat/completions"
     assert upstream.headers["authorization"] == "Bearer vllm-secret"
@@ -230,8 +230,7 @@ async def test_streaming_frames_get_the_virtual_model(gateway: Gateway) -> None:
     assert first == {
         "model": "first_available",
         "choices": [{"delta": {"content": "A cat"}}],
-        "last_virtual_model": "fast_model",
-        "provider": "vllm",
+        "extra_fields": {"last_virtual_model": "fast_model", "provider": "vllm"},
     }
     assert second == {"model": "first_available", "choices": [], "usage": {"total_tokens": 14}}
 
@@ -268,8 +267,7 @@ async def test_embeddings_are_sent_to_real_model(gateway: Gateway) -> None:
     assert response.status_code == 200
     assert response.json() == embeddings | {
         "model": "embedding_model",
-        "last_virtual_model": "embedding_model",
-        "provider": "vllm",
+        "extra_fields": {"last_virtual_model": "embedding_model", "provider": "vllm"},
     }
     [upstream] = gateway.providers.requests
     assert str(upstream.url) == "http://vllm.test/v1/embeddings"
@@ -307,7 +305,7 @@ async def test_failed_upstream_falls_back_to_next_model(gateway: Gateway, failur
     assert response.status_code == 200
     body = response.json()
     # The client sees the model it asked for, and the route that actually served it
-    assert (body["model"], body["last_virtual_model"], body["provider"]) == (
+    assert (body["model"], body["extra_fields"]["last_virtual_model"], body["extra_fields"]["provider"]) == (
         "first_available",
         "smart_model",
         "llama_cpp",
@@ -432,10 +430,10 @@ async def test_busy_model_falls_through_to_next_model(gateway: Gateway) -> None:
     second = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
 
     assert second.status_code == 200
-    assert second.json()["last_virtual_model"] == "smart_model"
+    assert second.json()["extra_fields"]["last_virtual_model"] == "smart_model"
     assert await gateway.queue_length("service", "fast_model") == 0  # queued for fast_model, left once served
     finish.set()
-    assert (await first).json()["last_virtual_model"] == "fast_model"
+    assert (await first).json()["extra_fields"]["last_virtual_model"] == "fast_model"
 
 
 async def test_fractional_quota_holds_capacity_for_residual_time(gateway: Gateway) -> None:

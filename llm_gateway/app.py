@@ -56,8 +56,9 @@ class _Labeller:
 
     def __init__(self, model: str, last_virtual_model: str, provider: str) -> None:
         self._model = model
-        # Only the first labelled body carries them, so later frames of a stream stay small
-        self._extra: dict[str, str] = {"last_virtual_model": last_virtual_model, "provider": provider}
+        # Only the first labelled body carries them, so later frames of a stream stay small. They are nested in
+        # `extra_fields`, as Bifrost does, so that they don't contend with fields of the response schema
+        self._extra_fields: dict[str, str] | None = {"last_virtual_model": last_virtual_model, "provider": provider}
 
     def apply(self, body: bytes) -> bytes:
         """The body with the model name replaced, or the body as it is when it carries none."""
@@ -68,8 +69,9 @@ class _Labeller:
         if not isinstance(payload, dict) or "model" not in payload:
             return body
         payload["model"] = self._model
-        payload |= self._extra
-        self._extra = {}
+        if self._extra_fields is not None:
+            payload["extra_fields"] = self._extra_fields
+            self._extra_fields = None
         return json.dumps(payload, ensure_ascii=False).encode()
 
 
