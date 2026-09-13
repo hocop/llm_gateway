@@ -1,5 +1,6 @@
 """FastAPI application exposing the OpenAI-compatible gateway API."""
 
+import json
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -50,13 +51,74 @@ _MODEL_ENDPOINTS = frozenset(
 )
 
 
-class _ProxiedResponse(StreamingResponse):
-    """Streams an upstream response to the client, releasing its quota leases afterwards."""
+class _Labeller:
+    """Replaces the real model name in JSON bodies, telling which route served the request."""
 
-    def __init__(self, upstream: UpstreamResponse) -> None:
+    def __init__(self, model: str, last_virtual_model: str, provider: str) -> None:
+        self._model = model
+        # Only the first labelled body carries them, so later frames of a stream stay small
+        self._extra: dict[str, str] = {"last_virtual_model": last_virtual_model, "provider": provider}
+
+    def apply(self, body: bytes) -> bytes:
+        """The body with the model name replaced, or the body as it is when it carries none."""
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return body
+        if not isinstance(payload, dict) or "model" not in payload:
+            return body
+        payload["model"] = self._model
+        payload |= self._extra
+        self._extra = {}
+        return json.dumps(payload, ensure_ascii=False).encode()
+
+
+async def _labelled_json(response: httpx.Response, labeller: _Labeller) -> AsyncIterator[bytes]:
+    yield labeller.apply(await response.aread())
+
+
+async def _labelled_events(response: httpx.Response, labeller: _Labeller) -> AsyncIterator[bytes]:
+    """Relabels a server-sent event stream line by line, as chunks may split a frame anywhere."""
+    buffer = b""
+    async for chunk in response.aiter_bytes():
+        buffer += chunk
+        while b"\n" in buffer:
+            line, _, buffer = buffer.partition(b"\n")
+            yield _labelled_line(line, labeller) + b"\n"
+    if buffer:
+        yield _labelled_line(buffer, labeller)
+
+
+def _labelled_line(line: bytes, labeller: _Labeller) -> bytes:
+    """A `data:` line with its JSON payload relabelled. Other lines and `[DONE]` are left alone."""
+    prefix, colon, payload = line.partition(b":")
+    data = payload.strip()
+    if prefix != b"data" or not colon or not data or data == b"[DONE]":
+        return line
+    return b"data: " + labeller.apply(data)
+
+
+def _relabelled(upstream: UpstreamResponse, model: str) -> AsyncIterator[bytes]:
+    """The upstream body, with the real model name replaced by the virtual model the client asked for."""
+    response = upstream.response
+    if not response.is_success or not upstream.virtual_model:
+        return response.aiter_bytes()  # upstream errors are returned as they are
+    labeller = _Labeller(model, upstream.virtual_model, upstream.provider)
+    content_type = response.headers.get("content-type", "")
+    if content_type.startswith("application/json"):
+        return _labelled_json(response, labeller)
+    if content_type.startswith("text/event-stream"):
+        return _labelled_events(response, labeller)
+    return response.aiter_bytes()  # audio and other binary bodies carry no model name
+
+
+class _ProxiedResponse(StreamingResponse):
+    """Streams an upstream response to the client, relabelled, releasing its quota leases afterwards."""
+
+    def __init__(self, upstream: UpstreamResponse, model: str) -> None:
         response = upstream.response
         headers = {name: value for name, value in response.headers.items() if name not in _SKIPPED_RESPONSE_HEADERS}
-        super().__init__(response.aiter_bytes(), status_code=response.status_code, headers=headers)
+        super().__init__(_relabelled(upstream, model), status_code=response.status_code, headers=headers)
         self._upstream = upstream
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -134,7 +196,7 @@ def create_app(
         if not key.allows(client_request.model):
             raise GatewayError(403, f"Virtual key is not allowed to use model {client_request.model!r}")
         upstream = await router.open(key, client_request)
-        return _ProxiedResponse(upstream)
+        return _ProxiedResponse(upstream, client_request.model)
 
     return app
 

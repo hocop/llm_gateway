@@ -157,7 +157,8 @@ async def test_chat_completion_is_sent_to_real_model(gateway: Gateway) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == completion("qwen-fast")  # usage and other fields are preserved
+    # usage and other fields are preserved, the real model name is replaced by the virtual one
+    assert response.json() == completion("fast_model") | {"last_virtual_model": "fast_model", "provider": "vllm"}
     [upstream] = gateway.providers.requests
     assert str(upstream.url) == "http://vllm.test/v1/chat/completions"
     assert upstream.headers["authorization"] == "Bearer vllm-secret"
@@ -200,6 +201,54 @@ async def test_streaming_response_is_passed_through(gateway: Gateway) -> None:
     await eventually(lambda: _usage_is(gateway, "limited", "fast_model", 0))
 
 
+async def test_streaming_frames_get_the_virtual_model(gateway: Gateway) -> None:
+    frames = [
+        b'data: {"model":"qwen-fast","choices":[{"delta":{"content":"A cat"}}]}\n\n',
+        b'data: {"model":"qwen-fast","choices":[],"usage":{"total_tokens":14}}\n\n',
+        b"data: [DONE]\n\n",
+    ]
+
+    async def stream(request: httpx.Request) -> httpx.Response:
+        async def body() -> AsyncIterator[bytes]:
+            # Chunks split the frames anywhere, so relabelling must not rely on their boundaries
+            payload = b"".join(frames)
+            for start in range(0, len(payload), 7):
+                yield payload[start : start + 7]
+
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content=body())
+
+    gateway.providers.handlers["vllm.test"] = stream
+    response = await gateway.client.post(
+        "/v1/chat/completions", headers=auth("me"), json=chat("first_available", stream=True)
+    )
+
+    assert response.status_code == 200
+    assert response.text.endswith("data: [DONE]\n\n")  # framing survives
+    data = [line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: ")]
+    first, second = (json.loads(payload) for payload in data[:2])
+    # Every frame gets the virtual model, only the first one gets the route it was served by
+    assert first == {
+        "model": "first_available",
+        "choices": [{"delta": {"content": "A cat"}}],
+        "last_virtual_model": "fast_model",
+        "provider": "vllm",
+    }
+    assert second == {"model": "first_available", "choices": [], "usage": {"total_tokens": 14}}
+
+
+async def test_binary_response_is_passed_through(gateway: Gateway) -> None:
+    async def speak(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"Content-Type": "audio/mpeg"}, content=b"ID3\x00\xff\xfb")
+
+    gateway.providers.handlers["vllm.test"] = speak
+    response = await gateway.client.post(
+        "/v1/audio/speech", headers=auth("me"), json={"model": "fast_model", "input": "hi"}
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"ID3\x00\xff\xfb"
+
+
 async def test_embeddings_are_sent_to_real_model(gateway: Gateway) -> None:
     embeddings = {
         "object": "list",
@@ -217,7 +266,11 @@ async def test_embeddings_are_sent_to_real_model(gateway: Gateway) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == embeddings
+    assert response.json() == embeddings | {
+        "model": "embedding_model",
+        "last_virtual_model": "embedding_model",
+        "provider": "vllm",
+    }
     [upstream] = gateway.providers.requests
     assert str(upstream.url) == "http://vllm.test/v1/embeddings"
     assert json.loads(upstream.content) == {"model": "bge", "input": "hello"}
@@ -252,7 +305,13 @@ async def test_failed_upstream_falls_back_to_next_model(gateway: Gateway, failur
     response = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
 
     assert response.status_code == 200
-    assert response.json()["model"] == "qwen-smart"
+    body = response.json()
+    # The client sees the model it asked for, and the route that actually served it
+    assert (body["model"], body["last_virtual_model"], body["provider"]) == (
+        "first_available",
+        "smart_model",
+        "llama_cpp",
+    )
     assert gateway.providers.hosts == ["vllm.test", "llama.test"]
     # Quota taken for the failed model is given back too
     await eventually(lambda: _usage_is(gateway, "service", "fast_model", 0))
@@ -373,10 +432,10 @@ async def test_busy_model_falls_through_to_next_model(gateway: Gateway) -> None:
     second = await gateway.client.post("/v1/chat/completions", headers=auth("service"), json=chat("first_available"))
 
     assert second.status_code == 200
-    assert second.json()["model"] == "qwen-smart"
+    assert second.json()["last_virtual_model"] == "smart_model"
     assert await gateway.queue_length("service", "fast_model") == 0  # queued for fast_model, left once served
     finish.set()
-    assert (await first).json()["model"] == "qwen-fast"
+    assert (await first).json()["last_virtual_model"] == "fast_model"
 
 
 async def test_fractional_quota_holds_capacity_for_residual_time(gateway: Gateway) -> None:

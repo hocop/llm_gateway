@@ -10,7 +10,8 @@ An OpenAI-compatible LLM gateway in front of llama.cpp and vLLM servers:
   in Valkey as expiring leases, so all state is shared by replicas.
 
 Streaming, multimodal inputs, embeddings and other model endpoints from an allowlist are passed through unchanged
-except for the model name.
+except for the model name: requests carry the real one to the provider, and successful JSON and event-stream
+responses are relabelled back to the virtual model the client asked for, plus `last_virtual_model` and `provider`.
 Typical load is low (1-20 RPS); robustness and failsafe behavior are the top priority. Design proposals are in
 `docs/proposals/`, and the current behavior is described in `docs/wiki/`.
 
@@ -32,7 +33,7 @@ llm_gateway/
   config.py               # TOML config: providers, virtual models, virtual keys; startup validation
   quota.py                # concurrency quotas as expiring leases in Valkey
   routing.py              # client request parsing, fallback routing under quotas
-  app.py                  # FastAPI app: auth, /v1/models, proxy endpoint, streaming responses
+  app.py                  # FastAPI app: auth, /v1/models, proxy endpoint, streaming and relabelling responses
 scripts/
   generate_keys.py        # writes sk-<uuid4> secrets into .env for virtual keys that have none
 tests/

@@ -86,6 +86,8 @@ class UpstreamResponse:
     """An upstream response with a not yet consumed body, and the quota leases held until it is."""
 
     response: httpx.Response
+    virtual_model: str = ""  # the virtual model whose route served it, empty when no route did
+    provider: str = ""
     leases: list[Lease] = field(default_factory=list)
 
     async def aclose(self) -> None:
@@ -168,7 +170,7 @@ class ModelRouter:
         try:
             for route in model.routes:
                 if isinstance(route, UpstreamRoute):
-                    result = await self._try_upstream(route, attempt)
+                    result = await self._try_upstream(route, model.name, attempt)
                 else:
                     result = await self._try_model(self._config.models[route.name], attempt)
                 if isinstance(result, UpstreamResponse):
@@ -185,7 +187,9 @@ class ModelRouter:
                 lease.release(wake_waiters=False)
         return outcome
 
-    async def _try_upstream(self, route: UpstreamRoute, attempt: _Attempt) -> UpstreamResponse | _Outcome:
+    async def _try_upstream(
+        self, route: UpstreamRoute, virtual_model: str, attempt: _Attempt
+    ) -> UpstreamResponse | _Outcome:
         if route in attempt.failed:
             return _Outcome.FAILED
         provider = self._config.providers[route.provider]
@@ -209,4 +213,4 @@ class ModelRouter:
                 await response.aclose()
             return _Outcome.FAILED
 
-        return UpstreamResponse(response)
+        return UpstreamResponse(response, virtual_model, route.provider)

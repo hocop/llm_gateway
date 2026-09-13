@@ -8,7 +8,7 @@
 | `llm_gateway/config.py` | Loading and cross-checking TOML config; `VirtualKey` access and quota lookups |
 | `llm_gateway/quota.py` | Concurrency quotas as leases in Valkey (`QuotaStore`, `Lease`) |
 | `llm_gateway/routing.py` | Parsing client requests, fallback between routes under quotas (`ModelRouter`) |
-| `llm_gateway/app.py` | FastAPI endpoints, auth, streaming responses back; `create_app_from_env` wires everything |
+| `llm_gateway/app.py` | FastAPI endpoints, auth, streaming responses back and relabelling them; `create_app_from_env` wires everything |
 
 ## API
 
@@ -23,9 +23,15 @@
 - The key is sent as `Authorization: Bearer <secret>`. Gateway errors, unknown paths and methods included, are
   OpenAI-style `{"error": {"message", "type"}}`.
 
-Upstream response bodies, streaming or not, are passed back unchanged with their status and headers, so usage
-and other extra fields are preserved. Only a compressed body is decompressed, and sent without
-`Content-Encoding`. The `model` field in responses keeps the real model name.
+Upstream response bodies, streaming or not, are passed back with their status and headers, so usage and other
+extra fields are preserved. Only a compressed body is decompressed, and sent without `Content-Encoding`.
+
+Successful `application/json` and `text/event-stream` bodies are **relabelled**, so clients never see a real
+model name: the `model` field becomes the virtual model the client asked for, and the first body carrying one
+also gets `last_virtual_model`, the virtual model whose route served the request, and `provider`. Later frames
+of a stream get only `model`, keeping them small. Event streams are relabelled line by line, since chunks may
+split a frame anywhere. Bodies with no `model` field, audio and other binary bodies, and upstream error
+responses are left exactly as they are.
 
 Upstream connections are not pooled with a limit, since quotas already limit concurrency: a request never waits
 for a free connection while holding a quota lease. When the client disconnects, Starlette stops the response,
