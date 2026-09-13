@@ -6,9 +6,8 @@ Main difference from litellm and bifrost is quota mechanism. Instead of limiting
 
 It sits in front of llama.cpp and vLLM servers and speaks the OpenAI API:
 
-- **Virtual models** rename real models and can fall back through a list of targets when one is unavailable or its
-  quota is busy. Clients only ever see virtual models.
-- **Virtual keys** get a set of allowed virtual models and a concurrency quota for each.
+- **Virtual models** rename real models
+- **Virtual keys** set allowed virtual models and a concurrency quota for each user
 - **Concurrency quotas** are fractional (`0.5` means half a worker) and live in Valkey, so replicas share them.
 
 Streaming, multimodal inputs and embeddings are passed through unchanged. Details are in
