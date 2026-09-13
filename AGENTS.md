@@ -24,6 +24,7 @@ Typical load is low (1-20 RPS); robustness and failsafe behavior are the top pri
 ## Project Structure Guide
 ```
 main.py                   # entry point: runs uvicorn with the app factory
+justfile                  # just recipes: check, test, build, up, down
 Dockerfile                # gateway image, built with uv; holds no config
 docker-compose.yml        # gateway + valkey, for docker compose and podman compose
 .dockerignore             # keeps config/, .env, tests and docs out of the image
@@ -53,10 +54,10 @@ docs/change_notes/        # records of big architectural decisions
 1. Python 3.12 with modern typing style.
 2. FastAPI as the backend framework.
 3. Valkey for all dynamic state, with credentials given in environment variables. Nothing dynamic is kept only in RAM.
-4. All usage paths must be covered by unit tests with mocked LLM endpoints. Run them with `uv run pytest`.
+4. All usage paths must be covered by unit tests with mocked LLM endpoints. Run them with `just test`.
 5. `uv` is the only dependency manager: add dependencies with `uv add` (`uv add --dev` for dev ones). Never run
    `uv pip install` in the venv.
-6. `ty` for type checking. Run it with `uv run ty check`.
+6. `ty` for type checking and `ruff` for linting. Run both with `just check`.
 
 ---
 

@@ -104,6 +104,6 @@ server can wake up each other's requests, which only costs them an extra walk.
 test:
 
 ```sh
-uv run pytest
-uv run ty check
+just test   # uv run pytest
+just check  # uv run ty check, then uv run ruff check
 ```
