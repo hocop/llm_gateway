@@ -8,4 +8,4 @@ Main difference from llmlite and bifrost is quota mechanism. Instead of limiting
 
 
 
-## How to run
+## Run with docker/podman compose
