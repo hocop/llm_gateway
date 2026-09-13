@@ -38,9 +38,11 @@ async def test_app_from_env_starts_and_stops(tmp_path: Path, monkeypatch: pytest
         monkeypatch.setenv(name, value)
     app = create_app_from_env()
 
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
-            response = await client.get("/v1/models", headers=auth("service"))
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client,
+    ):
+        response = await client.get("/v1/models", headers=auth("service"))
 
     assert response.status_code == 200
     assert [model["id"] for model in response.json()["data"]] == ["first_available"]

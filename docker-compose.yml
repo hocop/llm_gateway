@@ -1,0 +1,26 @@
+# Works with both `docker compose` and `podman compose`.
+# Image names are fully qualified because podman has no default registry.
+services:
+  valkey:
+    image: docker.io/valkey/valkey:9-alpine
+    # Quota leases are short-lived, so nothing is worth persisting to disk
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+
+  gateway:
+    build: .
+    image: localhost/llm-gateway:latest
+    # Without this mount the gateway finds no config files and exits at startup.
+    # ":z" relabels for SELinux and is ignored on systems without it.
+    volumes:
+      - ./config:/app/config:ro,z
+    environment:
+      VALKEY_URL: valkey://valkey:6379/0
+    # Virtual key secrets: LLM_KEY_<NAME> for every key in config/virtual_keys.toml
+    env_file:
+      - .env
+    ports:
+      - "4000:4000"
+    depends_on:
+      - valkey
+    restart: unless-stopped

@@ -23,12 +23,18 @@ Typical load is low (1-20 RPS); robustness and failsafe behavior are the top pri
 ## Project Structure Guide
 ```
 main.py                   # entry point: runs uvicorn with the app factory
+Dockerfile                # gateway image, built with uv; holds no config
+docker-compose.yml        # gateway + valkey, for docker compose and podman compose
+.dockerignore             # keeps config/, .env, tests and docs out of the image
+.env.example              # the LLM_KEY_<NAME> secrets to copy to .env
 llm_gateway/
   settings.py             # runtime settings from environment variables
   config.py               # TOML config: providers, virtual models, virtual keys; startup validation
   quota.py                # concurrency quotas as expiring leases in Valkey
   routing.py              # client request parsing, fallback routing under quotas
   app.py                  # FastAPI app: auth, /v1/models, proxy endpoint, streaming responses
+scripts/
+  generate_keys.py        # writes sk-<uuid4> secrets into .env for virtual keys that have none
 tests/
   helpers.py              # test config, mocked providers, gateway harness
   conftest.py             # fixtures: test database in local Valkey, in-process gateway
@@ -157,6 +163,7 @@ Keep this list up to date every time a note is added, in the format `note_name: 
 - `003_review_by_qwen_flash.md` - fixes from the qwen review: no connection cap, stricter config validation, OpenAI-style 404/405, more tests
 - `004_model_endpoint_allowlist.md` - only allowlisted model endpoints are forwarded, so decoded `..` and `?` in paths can't reach provider admin endpoints
 - `005_p001_b1_quota_waiting.md` - requests waiting for quota are served in arrival order through ticket queues and woken up by Valkey pub/sub; budgets are integer hundredths
+- `006_p002_compose.md` - deployable with docker/podman compose: an image holding no config, `config/` and `.env` supplied by the host, a Valkey container, and a script generating the missing key secrets
 
 ---
 

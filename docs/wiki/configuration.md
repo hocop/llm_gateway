@@ -2,6 +2,22 @@
 
 ## Running
 
+The main path is compose, with `docker compose` and `podman compose` alike:
+
+```sh
+podman compose up -d
+```
+
+`docker-compose.yml` runs the gateway on port 4000 and a Valkey container next to it (`VALKEY_URL` points the
+gateway at it). Valkey saves nothing to disk: quota leases are short-lived, and losing them only frees quota.
+
+Two things are mounted or read from the host, and the image holds neither:
+
+- `./config` is mounted read-only at `/app/config`. Without it the gateway finds no config files and exits.
+- `.env` next to `docker-compose.yml` holds the `LLM_KEY_<NAME>` secrets. Compose fails to start if it is missing.
+
+Without compose:
+
 ```sh
 uv run main.py --host 0.0.0.0 --port 4000 --workers 2
 ```
@@ -18,6 +34,10 @@ all quota state through Valkey, so any number of them can run at once.
 | `LLM_GATEWAY_QUOTA_TIMEOUT` | `300` | Seconds a request waits for free quota before getting 429 |
 | `LLM_GATEWAY_UPSTREAM_TIMEOUT` | `600` | Seconds of upstream silence (waiting for headers or the next chunk) before the upstream counts as failed |
 | `LLM_KEY_<NAME>` | required | Secret of the virtual key `<name>`, e.g. `LLM_KEY_MY_SERVICE_1` for `my_service_1` |
+
+`uv run scripts/generate_keys.py` writes a secret into `.env` for every virtual key in the config that has none,
+as `sk-<uuid4>`. Secrets already in the file are never changed, so it is safe to rerun after adding a key. Any
+non-empty secret works; the gateway only requires that two keys do not share one.
 
 ## Config files
 
